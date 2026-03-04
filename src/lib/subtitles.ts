@@ -9,7 +9,107 @@ export interface ParsedCue {
 export interface ParsedSubtitleFile {
   cues: ParsedCue[];
   duration: number;
+  languageCode: string | null;
+  languageLabel: string | null;
 }
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  ar: "Arabic",
+  ca: "Catalan",
+  cy: "Welsh",
+  da: "Danish",
+  de: "German",
+  en: "English",
+  "en-orig": "English",
+  es: "Spanish",
+  eu: "Basque",
+  fi: "Finnish",
+  fr: "French",
+  ga: "Irish",
+  gd: "Scottish Gaelic",
+  gl: "Galician",
+  it: "Italian",
+  ja: "Japanese",
+  ko: "Korean",
+  nl: "Dutch",
+  no: "Norwegian",
+  pl: "Polish",
+  pt: "Portuguese",
+  "pt-pt": "Portuguese",
+  ro: "Romanian",
+  ru: "Russian",
+  sv: "Swedish",
+  tr: "Turkish",
+  uk: "Ukrainian",
+  zh: "Chinese",
+  "zh-hans": "Chinese (Simplified)",
+  "zh-hant": "Chinese (Traditional)",
+};
+
+const toTitleCase = (value: string) =>
+  value.replace(/\b\w/g, (character) => character.toUpperCase());
+
+const normalizeLanguageCode = (value: string | null | undefined) => {
+  if (!value) {
+    return null;
+  }
+
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-");
+};
+
+const getLanguageLabel = (code: string | null) => {
+  if (!code) {
+    return null;
+  }
+
+  if (LANGUAGE_LABELS[code]) {
+    return LANGUAGE_LABELS[code];
+  }
+
+  const baseCode = code.split("-")[0];
+  if (LANGUAGE_LABELS[baseCode]) {
+    return LANGUAGE_LABELS[baseCode];
+  }
+
+  return toTitleCase(code.replace(/-/g, " "));
+};
+
+const readHeaderLanguageCode = (content: string) => {
+  const match = content.match(/^\s*Language:\s*([A-Za-z0-9_-]+)/im);
+  return normalizeLanguageCode(match?.[1] ?? null);
+};
+
+const readFileNameLanguageCode = (fileName: string) => {
+  const normalizedName = fileName.toLowerCase();
+  const strippedName = normalizedName.replace(/\.(vtt|srt)$/i, "");
+  const parts = strippedName.split(/[\s._-]+/).filter(Boolean);
+  const directMatch = [...parts].reverse().find((part) => {
+    const normalizedPart = normalizeLanguageCode(part);
+    if (!normalizedPart) {
+      return false;
+    }
+
+    return Boolean(LANGUAGE_LABELS[normalizedPart] || LANGUAGE_LABELS[normalizedPart.split("-")[0]]);
+  });
+
+  return normalizeLanguageCode(directMatch ?? null);
+};
+
+export const inferSubtitleTrackInfo = (content: string, fileName: string, fallbackCode: string) => {
+  const languageCode =
+    readHeaderLanguageCode(content) ??
+    readFileNameLanguageCode(fileName) ??
+    normalizeLanguageCode(fallbackCode) ??
+    fallbackCode;
+
+  return {
+    languageCode,
+    languageLabel: getLanguageLabel(languageCode) ?? fileName.replace(/\.(vtt|srt)$/i, ""),
+  };
+};
 
 const parseTimestamp = (value: string) => {
   const [hours, minutes, seconds] = value.replace(",", ".").split(":");
@@ -192,9 +292,12 @@ export const buildDualTranscript = (first: ParsedCue[], second: ParsedCue[]) => 
 export const parseSubtitleText = (content: string, fileName: string) => {
   const lowerName = fileName.toLowerCase();
   const cues = lowerName.endsWith(".vtt") ? parseVtt(content) : parseSrt(content);
+  const { languageCode, languageLabel } = inferSubtitleTrackInfo(content, fileName, "en");
   return {
     cues,
     duration: cues.length ? cues[cues.length - 1].end : 0,
+    languageCode,
+    languageLabel,
   } satisfies ParsedSubtitleFile;
 };
 
@@ -230,3 +333,16 @@ export const extractYouTubeVideoId = (input: string) => {
 
 export const getYouTubeThumbnailUrl = (videoId: string) =>
   `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+export const fetchYouTubeVideoTitle = async (videoId: string) => {
+  const response = await fetch(
+    `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`,
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch video title");
+  }
+
+  const payload = (await response.json()) as { title?: string };
+  return payload.title?.trim() || null;
+};

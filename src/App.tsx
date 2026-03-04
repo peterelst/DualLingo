@@ -1,8 +1,11 @@
 import {
+  Check,
   FolderOpen,
+  Pencil,
   Plus,
   Search,
   Settings2,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -15,6 +18,7 @@ import {
 } from "react";
 import currentDemoTranscript from "@/data/fRaUe_ZkjnA.dual.json";
 import alternateDemoTranscript from "@/data/CT1DO_KyOek.dual.json";
+import thirdDemoTranscript from "@/data/5xPYXF3W7jA.dual.json";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,10 +26,17 @@ import { useYouTubePlayer } from "@/hooks/use-youtube-player";
 import {
   buildDualTranscript,
   extractYouTubeVideoId,
+  fetchYouTubeVideoTitle,
   getYouTubeThumbnailUrl,
   parseSubtitleText,
   validateSubtitlePair,
 } from "@/lib/subtitles";
+import {
+  deleteVideo,
+  listSavedVideos,
+  saveVideo,
+  type SavedVideoLibraryEntry,
+} from "@/lib/video-library";
 import { cn } from "@/lib/utils";
 import type { TranscriptSegment } from "@/types/youtube";
 
@@ -44,6 +55,12 @@ const DEMO_VIDEOS = [
     subtitle: "Season 8, episode 70",
     segments: alternateDemoTranscript as TranscriptSegment[],
   },
+  {
+    id: "5xPYXF3W7jA",
+    title: "Ros na Rún",
+    subtitle: "Season 8, episode 61",
+    segments: thirdDemoTranscript as TranscriptSegment[],
+  },
 ] as const;
 
 const formatTime = (seconds: number) => {
@@ -53,33 +70,31 @@ const formatTime = (seconds: number) => {
   return `${minutes}:${remainder.toString().padStart(2, "0")}`;
 };
 
-const stripExtension = (fileName: string) => fileName.replace(/\.(vtt|srt)$/i, "");
-
 const isSupportedSubtitleFile = (file: File) => /\.(vtt|srt)$/i.test(file.name);
 
-const detectLanguageCode = (label: string, fallback: string) => {
-  const normalized = label.toLowerCase();
-  if (/(^|[\s_-])(en|english)([\s_-]|$)/.test(normalized)) {
-    return "en";
-  }
-  if (/(^|[\s_-])(ga|irish|gaeilge)([\s_-]|$)/.test(normalized)) {
-    return "ga";
-  }
-  return fallback;
-};
+const loadViewerState = (
+  videoId: string,
+  segments: TranscriptSegment[],
+  firstTrackLabel: string,
+  secondTrackLabel: string,
+  firstTrackCode: string,
+  secondTrackCode: string,
+) => ({
+  videoId,
+  thumbnailUrl: getYouTubeThumbnailUrl(videoId),
+  segments,
+  firstTrackLabel,
+  secondTrackLabel,
+  firstTrackCode,
+  secondTrackCode,
+});
 
 function App() {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
-  const [viewerState, setViewerState] = useState({
-    videoId: DEFAULT_VIDEO_ID,
-    thumbnailUrl: getYouTubeThumbnailUrl(DEFAULT_VIDEO_ID),
-    segments: currentDemoTranscript as TranscriptSegment[],
-    firstTrackLabel: "English",
-    secondTrackLabel: "Irish",
-    firstTrackCode: "en",
-    secondTrackCode: "ga",
-  });
+  const [viewerState, setViewerState] = useState(
+    loadViewerState(DEFAULT_VIDEO_ID, currentDemoTranscript as TranscriptSegment[], "English", "Irish", "en", "ga"),
+  );
   const [showSetupPanel, setShowSetupPanel] = useState(false);
   const [showDemoMenu, setShowDemoMenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -87,11 +102,15 @@ function App() {
   const [pendingVideoInput, setPendingVideoInput] = useState(DEFAULT_VIDEO_ID);
   const [pendingFirstFile, setPendingFirstFile] = useState<File | null>(null);
   const [pendingSecondFile, setPendingSecondFile] = useState<File | null>(null);
+  const [pendingVideoTitle, setPendingVideoTitle] = useState("");
   const [setupError, setSetupError] = useState<string | null>(null);
   const [isApplyingSetup, setIsApplyingSetup] = useState(false);
+  const [editingSavedVideoId, setEditingSavedVideoId] = useState<string | null>(null);
+  const [editingSavedVideoTitle, setEditingSavedVideoTitle] = useState("");
   const [showCaptions, setShowCaptions] = useState(true);
   const [captionTrackTarget, setCaptionTrackTarget] = useState<"primary" | "secondary">("primary");
   const [playbackRate, setPlaybackRate] = useState<(typeof PLAYBACK_RATES)[number]>(1);
+  const [savedVideos, setSavedVideos] = useState<SavedVideoLibraryEntry[]>([]);
   const [thumbnailStatus, setThumbnailStatus] = useState<"idle" | "loading" | "ready" | "error">(
     "idle",
   );
@@ -101,6 +120,7 @@ function App() {
   const scrollAnimationFrameRef = useRef<number | null>(null);
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
   const demoMenuRef = useRef<HTMLDivElement | null>(null);
+  const isPendingTitleDirtyRef = useRef(false);
 
   const pendingVideoId = useMemo(() => extractYouTubeVideoId(pendingVideoInput), [pendingVideoInput]);
   const playerOptions = useMemo(
@@ -121,6 +141,26 @@ function App() {
     ],
   );
   const { currentTime, hostRef, seekTo } = useYouTubePlayer(viewerState.videoId, playerOptions);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    listSavedVideos()
+      .then((entries) => {
+        if (!cancelled) {
+          setSavedVideos(entries);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSavedVideos([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!showSettingsMenu) {
@@ -163,6 +203,35 @@ function App() {
     image.src = getYouTubeThumbnailUrl(pendingVideoId);
     image.onload = () => setThumbnailStatus("ready");
     image.onerror = () => setThumbnailStatus("error");
+  }, [pendingVideoId]);
+
+  useEffect(() => {
+    if (!pendingVideoId) {
+      setPendingVideoTitle("");
+      isPendingTitleDirtyRef.current = false;
+      return;
+    }
+
+    let cancelled = false;
+    const requestedVideoId = pendingVideoId;
+
+    fetchYouTubeVideoTitle(requestedVideoId)
+      .then((title) => {
+        if (cancelled || !title || isPendingTitleDirtyRef.current || pendingVideoId !== requestedVideoId) {
+          return;
+        }
+
+        setPendingVideoTitle(title);
+      })
+      .catch(() => {
+        if (!cancelled && !isPendingTitleDirtyRef.current && pendingVideoId === requestedVideoId) {
+          setPendingVideoTitle("");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [pendingVideoId]);
 
   const filteredTranscript = useMemo(() => {
@@ -282,6 +351,8 @@ function App() {
     setPendingVideoInput(nextVideoId ?? viewerState.videoId);
     setPendingFirstFile(null);
     setPendingSecondFile(null);
+    setPendingVideoTitle("");
+    isPendingTitleDirtyRef.current = false;
     setSetupError(null);
     setShowSetupPanel(false);
   };
@@ -326,15 +397,38 @@ function App() {
         return;
       }
 
-      setViewerState({
+      const firstTrackLabel = firstParsed.languageLabel ?? "Primary";
+      const secondTrackLabel = secondParsed.languageLabel ?? "Secondary";
+      const firstTrackCode = firstParsed.languageCode ?? "en";
+      const secondTrackCode = secondParsed.languageCode ?? "ga";
+      const nextViewerState = loadViewerState(
+        pendingVideoId,
+        segments,
+        firstTrackLabel,
+        secondTrackLabel,
+        firstTrackCode,
+        secondTrackCode,
+      );
+      const nextSavedVideo: SavedVideoLibraryEntry = {
+        id: `${pendingVideoId}:${firstTrackLabel}:${secondTrackLabel}`,
         videoId: pendingVideoId,
         thumbnailUrl: getYouTubeThumbnailUrl(pendingVideoId),
         segments,
-        firstTrackLabel: stripExtension(pendingFirstFile.name),
-        secondTrackLabel: stripExtension(pendingSecondFile.name),
-        firstTrackCode: detectLanguageCode(pendingFirstFile.name, "en"),
-        secondTrackCode: detectLanguageCode(pendingSecondFile.name, "ga"),
+        firstTrackLabel,
+        secondTrackLabel,
+        firstTrackCode,
+        secondTrackCode,
+        title: pendingVideoTitle.trim() || pendingVideoId,
+        subtitle: `${firstTrackLabel} / ${secondTrackLabel}`,
+        createdAt: new Date().toISOString(),
+      };
+
+      setViewerState(nextViewerState);
+      setSavedVideos((current) => {
+        const remaining = current.filter((entry) => entry.id !== nextSavedVideo.id);
+        return [nextSavedVideo, ...remaining];
       });
+      void saveVideo(nextSavedVideo);
       setQuery("");
       resetSetupPanel(pendingVideoId);
     } catch {
@@ -342,6 +436,32 @@ function App() {
     } finally {
       setIsApplyingSetup(false);
     }
+  };
+
+  const removeSavedVideo = (id: string) => {
+    setSavedVideos((current) => current.filter((entry) => entry.id !== id));
+    void deleteVideo(id);
+  };
+
+  const saveEditedVideoTitle = (id: string) => {
+    const nextTitle = editingSavedVideoTitle.trim();
+    if (!nextTitle) {
+      return;
+    }
+
+    setSavedVideos((current) =>
+      current.map((entry) => {
+        if (entry.id !== id) {
+          return entry;
+        }
+
+        const nextEntry = { ...entry, title: nextTitle };
+        void saveVideo(nextEntry);
+        return nextEntry;
+      }),
+    );
+    setEditingSavedVideoId(null);
+    setEditingSavedVideoTitle("");
   };
 
   return (
@@ -404,9 +524,6 @@ function App() {
                         <div className="space-y-3">
                           <div>
                             <p className="text-sm font-semibold">Video library</p>
-                            <p className="text-xs text-muted-foreground">
-                              Built-in examples with prepared subtitles.
-                            </p>
                           </div>
 
                           {DEMO_VIDEOS.map((demo) => (
@@ -414,15 +531,16 @@ function App() {
                               key={demo.id}
                               type="button"
                               onClick={() => {
-                                setViewerState({
-                                  videoId: demo.id,
-                                  thumbnailUrl: getYouTubeThumbnailUrl(demo.id),
-                                  segments: demo.segments,
-                                  firstTrackLabel: "English",
-                                  secondTrackLabel: "Irish",
-                                  firstTrackCode: "en",
-                                  secondTrackCode: "ga",
-                                });
+                                setViewerState(
+                                  loadViewerState(
+                                    demo.id,
+                                    demo.segments,
+                                    "English",
+                                    "Irish",
+                                    "en",
+                                    "ga",
+                                  ),
+                                );
                                 setQuery("");
                                 setPendingVideoInput(demo.id);
                                 setShowDemoMenu(false);
@@ -438,6 +556,107 @@ function App() {
                               <p className="mt-1 text-xs text-muted-foreground">{demo.subtitle}</p>
                             </button>
                           ))}
+
+                          {savedVideos.length > 0 ? (
+                            <>
+                              {savedVideos.map((video) => (
+                                <div
+                                  key={video.id}
+                                  className={cn(
+                                    "flex items-start gap-2 rounded-[20px] border px-3 py-3 transition",
+                                    viewerState.videoId === video.videoId &&
+                                      viewerState.firstTrackLabel === video.firstTrackLabel &&
+                                      viewerState.secondTrackLabel === video.secondTrackLabel
+                                      ? "border-amber-300 bg-amber-100/90"
+                                      : "border-amber-200/80 bg-amber-50/80",
+                                  )}
+                                >
+                                  <div className="min-w-0 flex-1 px-1 text-left">
+                                    {editingSavedVideoId === video.id ? (
+                                      <Input
+                                        value={editingSavedVideoTitle}
+                                        onChange={(event) => setEditingSavedVideoTitle(event.target.value)}
+                                        onClick={(event) => event.stopPropagation()}
+                                        onKeyDown={(event) => {
+                                          if (event.key === "Enter") {
+                                            event.preventDefault();
+                                            saveEditedVideoTitle(video.id);
+                                          }
+                                        }}
+                                        className="h-9"
+                                        autoFocus
+                                      />
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setViewerState(
+                                            loadViewerState(
+                                              video.videoId,
+                                              video.segments,
+                                              video.firstTrackLabel,
+                                              video.secondTrackLabel,
+                                              video.firstTrackCode,
+                                              video.secondTrackCode,
+                                            ),
+                                          );
+                                          setQuery("");
+                                          setPendingVideoInput(video.videoId);
+                                          setShowDemoMenu(false);
+                                        }}
+                                        className="block w-full text-left"
+                                      >
+                                        <p className="text-sm font-semibold">{video.title}</p>
+                                      </button>
+                                    )}
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      {video.subtitle}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      if (editingSavedVideoId === video.id) {
+                                        saveEditedVideoTitle(video.id);
+                                        return;
+                                      }
+
+                                      setEditingSavedVideoId(video.id);
+                                      setEditingSavedVideoTitle(video.title);
+                                    }}
+                                    className="rounded-full p-2 text-muted-foreground transition hover:bg-white/70 hover:text-foreground"
+                                    aria-label={
+                                      editingSavedVideoId === video.id
+                                        ? `Save title for ${video.title}`
+                                        : `Edit title for ${video.title}`
+                                    }
+                                  >
+                                    {editingSavedVideoId === video.id ? (
+                                      <Check className="h-4 w-4" />
+                                    ) : (
+                                      <Pencil className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      removeSavedVideo(video.id);
+                                    }}
+                                    className="rounded-full p-2 text-muted-foreground transition hover:bg-stone-100 hover:text-foreground"
+                                    aria-label={`Delete saved video ${video.title}`}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </>
+                          ) : (
+                            <div className="rounded-[20px] border border-dashed border-border/70 bg-white/70 px-4 py-3 text-xs text-muted-foreground">
+                              Your added videos will show up here
+                            </div>
+                          )}
                         </div>
                       </div>
                     </>
@@ -646,7 +865,7 @@ function App() {
                       )}
                     >
                       <div className="space-y-1">
-                        <span className="inline-flex rounded-full bg-emerald-700 px-3 py-1 text-xs font-semibold text-white">
+                        <span className="inline-flex rounded-full bg-emerald-800 px-3 py-1 text-xs font-semibold text-white">
                           {formatTime(segment.start)}
                         </span>
                         <p className="text-xs text-muted-foreground">
@@ -698,12 +917,30 @@ function App() {
                   <Input
                     id="youtube-input"
                     value={pendingVideoInput}
-                    onChange={(event) => setPendingVideoInput(event.target.value)}
+                    onChange={(event) => {
+                      isPendingTitleDirtyRef.current = false;
+                      setPendingVideoInput(event.target.value);
+                    }}
                     placeholder="https://www.youtube.com/watch?v=..."
                   />
                   <p className="text-xs text-muted-foreground">
                     Accepts a full YouTube URL or the 11-character video ID.
                   </p>
+                </div>
+
+                <div className="grid gap-2">
+                  <label className="text-sm font-semibold" htmlFor="video-title-input">
+                    Video title
+                  </label>
+                  <Input
+                    id="video-title-input"
+                    value={pendingVideoTitle}
+                    onChange={(event) => {
+                      isPendingTitleDirtyRef.current = true;
+                      setPendingVideoTitle(event.target.value);
+                    }}
+                    placeholder="Video title"
+                  />
                 </div>
 
                 <div className="mx-auto w-full max-w-sm overflow-hidden rounded-[20px] border border-border/70 bg-muted/40">
@@ -735,9 +972,9 @@ function App() {
                         setPendingFirstFile(event.target.files?.[0] ?? null)
                       }
                     />
-                    {pendingFirstFile && (
-                      <p className="text-xs text-muted-foreground">{pendingFirstFile.name}</p>
-                    )}
+                    <p className="min-h-4 text-xs text-muted-foreground">
+                      {pendingFirstFile?.name ?? ""}
+                    </p>
                   </label>
 
                   <label className="grid gap-2">
@@ -750,9 +987,9 @@ function App() {
                         setPendingSecondFile(event.target.files?.[0] ?? null)
                       }
                     />
-                    {pendingSecondFile && (
-                      <p className="text-xs text-muted-foreground">{pendingSecondFile.name}</p>
-                    )}
+                    <p className="min-h-4 text-xs text-muted-foreground">
+                      {pendingSecondFile?.name ?? ""}
+                    </p>
                   </label>
                 </div>
 
@@ -766,7 +1003,12 @@ function App() {
                   <Button type="button" variant="outline" onClick={() => resetSetupPanel()}>
                     Cancel
                   </Button>
-                  <Button type="button" onClick={applyNewVideo} disabled={!isSetupReady}>
+                  <Button
+                    type="button"
+                    onClick={applyNewVideo}
+                    disabled={!isSetupReady}
+                    className="bg-emerald-700 text-white hover:bg-emerald-800"
+                  >
                     {isApplyingSetup ? "Preparing..." : "Prepare video"}
                   </Button>
                 </div>

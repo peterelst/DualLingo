@@ -143,8 +143,8 @@ export function useYouTubePlayer(videoId: string, options: UseYouTubePlayerOptio
         videoId,
         playerVars: {
           autoplay: 0,
-          cc_lang_pref: "en",
-          cc_load_policy: 1,
+          cc_lang_pref: options.preferredCaptionLanguage,
+          cc_load_policy: options.showCaptions ? 1 : 0,
           controls: 1,
           enablejsapi: 1,
           fs: 1,
