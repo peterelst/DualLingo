@@ -4,7 +4,8 @@ import path from "node:path";
 const rootDir = process.cwd();
 const subtitleDir = path.join(rootDir, "assets", "subtitles");
 const outputDir = path.join(rootDir, "src", "data");
-const outputFile = path.join(outputDir, "fRaUe_ZkjnA.dual.json");
+const videoId = process.argv[2] ?? "fRaUe_ZkjnA";
+const outputFile = path.join(outputDir, `${videoId}.dual.json`);
 
 const parseTimestamp = (value) => {
   const [hours, minutes, seconds] = value.replace(",", ".").split(":");
@@ -170,8 +171,8 @@ const buildSegments = (english, irish) => {
 
 const main = async () => {
   const [englishRaw, irishRaw] = await Promise.all([
-    fs.readFile(path.join(subtitleDir, "fRaUe_ZkjnA.en.vtt"), "utf8"),
-    fs.readFile(path.join(subtitleDir, "fRaUe_ZkjnA.ga.vtt"), "utf8"),
+    fs.readFile(path.join(subtitleDir, `${videoId}.en.vtt`), "utf8"),
+    fs.readFile(path.join(subtitleDir, `${videoId}.ga.vtt`), "utf8"),
   ]);
 
   const english = parseVtt(englishRaw);
@@ -181,7 +182,7 @@ const main = async () => {
   await fs.mkdir(outputDir, { recursive: true });
   await fs.writeFile(outputFile, JSON.stringify(transcript, null, 2));
 
-  console.log(`Generated ${transcript.length} dual-language transcript segments.`);
+  console.log(`Generated ${transcript.length} dual-language transcript segments for ${videoId}.`);
 };
 
 main().catch((error) => {

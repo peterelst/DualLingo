@@ -54,6 +54,7 @@ const isReadyPlayer = (player: YouTubePlayer | null): player is YouTubePlayer =>
 
 interface UseYouTubePlayerOptions {
   playbackRate: 0.5 | 0.75 | 1;
+  preferredCaptionLanguage: string;
   showCaptions: boolean;
 }
 
@@ -62,7 +63,7 @@ const applyPlayerSettings = (player: YouTubePlayer, options: UseYouTubePlayerOpt
 
   if (options.showCaptions) {
     player.loadModule?.("captions");
-    player.setOption?.("captions", "track", { languageCode: "en" });
+    player.setOption?.("captions", "track", { languageCode: options.preferredCaptionLanguage });
     player.setOption?.("captions", "reload", true);
   } else {
     player.unloadModule?.("captions");

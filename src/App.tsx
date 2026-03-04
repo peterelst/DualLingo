@@ -1,8 +1,8 @@
 import {
-  Film,
+  FolderOpen,
+  Plus,
   Search,
   Settings2,
-  Upload,
   X,
 } from "lucide-react";
 import {
@@ -13,7 +13,8 @@ import {
   useRef,
   useState,
 } from "react";
-import demoTranscript from "@/data/fRaUe_ZkjnA.dual.json";
+import currentDemoTranscript from "@/data/fRaUe_ZkjnA.dual.json";
+import alternateDemoTranscript from "@/data/CT1DO_KyOek.dual.json";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,20 @@ import type { TranscriptSegment } from "@/types/youtube";
 
 const DEFAULT_VIDEO_ID = "fRaUe_ZkjnA";
 const PLAYBACK_RATES = [0.5, 0.75, 1] as const;
+const DEMO_VIDEOS = [
+  {
+    id: "fRaUe_ZkjnA",
+    title: "Ros na Rún",
+    subtitle: "Season 8, episode 5",
+    segments: currentDemoTranscript as TranscriptSegment[],
+  },
+  {
+    id: "CT1DO_KyOek",
+    title: "Ros na Rún",
+    subtitle: "Season 8, episode 70",
+    segments: alternateDemoTranscript as TranscriptSegment[],
+  },
+] as const;
 
 const formatTime = (seconds: number) => {
   const totalSeconds = Math.max(0, Math.floor(seconds));
@@ -42,24 +57,40 @@ const stripExtension = (fileName: string) => fileName.replace(/\.(vtt|srt)$/i, "
 
 const isSupportedSubtitleFile = (file: File) => /\.(vtt|srt)$/i.test(file.name);
 
+const detectLanguageCode = (label: string, fallback: string) => {
+  const normalized = label.toLowerCase();
+  if (/(^|[\s_-])(en|english)([\s_-]|$)/.test(normalized)) {
+    return "en";
+  }
+  if (/(^|[\s_-])(ga|irish|gaeilge)([\s_-]|$)/.test(normalized)) {
+    return "ga";
+  }
+  return fallback;
+};
+
 function App() {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [viewerState, setViewerState] = useState({
     videoId: DEFAULT_VIDEO_ID,
     thumbnailUrl: getYouTubeThumbnailUrl(DEFAULT_VIDEO_ID),
-    segments: demoTranscript as TranscriptSegment[],
+    segments: currentDemoTranscript as TranscriptSegment[],
     firstTrackLabel: "English",
     secondTrackLabel: "Irish",
+    firstTrackCode: "en",
+    secondTrackCode: "ga",
   });
   const [showSetupPanel, setShowSetupPanel] = useState(false);
+  const [showDemoMenu, setShowDemoMenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showNoticeBanner, setShowNoticeBanner] = useState(true);
   const [pendingVideoInput, setPendingVideoInput] = useState(DEFAULT_VIDEO_ID);
   const [pendingFirstFile, setPendingFirstFile] = useState<File | null>(null);
   const [pendingSecondFile, setPendingSecondFile] = useState<File | null>(null);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [isApplyingSetup, setIsApplyingSetup] = useState(false);
   const [showCaptions, setShowCaptions] = useState(true);
+  const [captionTrackTarget, setCaptionTrackTarget] = useState<"primary" | "secondary">("primary");
   const [playbackRate, setPlaybackRate] = useState<(typeof PLAYBACK_RATES)[number]>(1);
   const [thumbnailStatus, setThumbnailStatus] = useState<"idle" | "loading" | "ready" | "error">(
     "idle",
@@ -69,14 +100,25 @@ function App() {
   const lastScrollTargetRef = useRef<number | null>(null);
   const scrollAnimationFrameRef = useRef<number | null>(null);
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
+  const demoMenuRef = useRef<HTMLDivElement | null>(null);
 
   const pendingVideoId = useMemo(() => extractYouTubeVideoId(pendingVideoInput), [pendingVideoInput]);
   const playerOptions = useMemo(
     () => ({
       playbackRate,
+      preferredCaptionLanguage:
+        captionTrackTarget === "primary"
+          ? viewerState.firstTrackCode
+          : viewerState.secondTrackCode,
       showCaptions,
     }),
-    [playbackRate, showCaptions],
+    [
+      captionTrackTarget,
+      playbackRate,
+      showCaptions,
+      viewerState.firstTrackCode,
+      viewerState.secondTrackCode,
+    ],
   );
   const { currentTime, hostRef, seekTo } = useYouTubePlayer(viewerState.videoId, playerOptions);
 
@@ -94,6 +136,21 @@ function App() {
     window.addEventListener("mousedown", handlePointerDown);
     return () => window.removeEventListener("mousedown", handlePointerDown);
   }, [showSettingsMenu]);
+
+  useEffect(() => {
+    if (!showDemoMenu) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!demoMenuRef.current?.contains(event.target as Node)) {
+        setShowDemoMenu(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    return () => window.removeEventListener("mousedown", handlePointerDown);
+  }, [showDemoMenu]);
 
   useEffect(() => {
     if (!pendingVideoId) {
@@ -199,7 +256,27 @@ function App() {
     [],
   );
 
+  useEffect(() => {
+    const container = transcriptScrollerRef.current;
+    if (!container) {
+      return;
+    }
+
+    if (scrollAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(scrollAnimationFrameRef.current);
+      scrollAnimationFrameRef.current = null;
+    }
+
+    container.scrollTop = 0;
+    lastScrollTargetRef.current = 0;
+  }, [viewerState.videoId]);
+
   const getSeekTimestamp = (segment: TranscriptSegment) => segment.irishStart ?? segment.start;
+  const isSetupReady =
+    Boolean(pendingVideoId) &&
+    Boolean(pendingFirstFile) &&
+    Boolean(pendingSecondFile) &&
+    !isApplyingSetup;
 
   const resetSetupPanel = (nextVideoId?: string) => {
     setPendingVideoInput(nextVideoId ?? viewerState.videoId);
@@ -255,6 +332,8 @@ function App() {
         segments,
         firstTrackLabel: stripExtension(pendingFirstFile.name),
         secondTrackLabel: stripExtension(pendingSecondFile.name),
+        firstTrackCode: detectLanguageCode(pendingFirstFile.name, "en"),
+        secondTrackCode: detectLanguageCode(pendingSecondFile.name, "ga"),
       });
       setQuery("");
       resetSetupPanel(pendingVideoId);
@@ -266,11 +345,29 @@ function App() {
   };
 
   return (
-    <main className="h-screen w-full overflow-hidden px-3 py-3 sm:px-4 sm:py-4 lg:px-6 lg:py-6">
-      <section className="relative flex h-full flex-col overflow-hidden rounded-[28px] border border-white/80 bg-white/50 p-4 shadow-[0_40px_120px_-60px_rgba(31,24,19,0.75)] backdrop-blur-2xl sm:rounded-[36px] sm:p-6">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-r from-primary/20 via-transparent to-accent/30 blur-3xl" />
+    <main className="flex h-screen w-full flex-col overflow-hidden">
+      {showNoticeBanner && (
+        <div className="flex items-center justify-between gap-4 bg-indigo-800 px-4 py-3 text-sm text-white sm:px-6">
+          <p className="text-white">
+            This is a prototype tool strictly for educational purposes. Rights for the video and
+            subtitles remain with the original rights holders. 🙏🏻
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowNoticeBanner(false)}
+            className="rounded-full p-1 text-white/90 transition hover:bg-white/10 hover:text-white"
+            aria-label="Dismiss notice"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
-        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[1.02fr_0.98fr] xl:items-stretch xl:gap-6">
+      <div className="flex-1 overflow-hidden px-3 py-3 sm:px-4 sm:py-4 lg:px-6 lg:py-6">
+        <section className="relative flex h-full flex-col overflow-hidden rounded-[28px] border border-white/80 bg-white/50 p-4 shadow-[0_40px_120px_-60px_rgba(31,24,19,0.75)] backdrop-blur-2xl sm:rounded-[36px] sm:p-6">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-r from-primary/20 via-transparent to-accent/30 blur-3xl" />
+
+          <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[1.02fr_0.98fr] xl:items-stretch xl:gap-6">
           <div className="flex min-h-0 flex-col gap-4 xl:h-full">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -278,12 +375,75 @@ function App() {
                   <span className="mr-2">🦉</span>
                   DualLingo
                 </h1>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  English and Irish subtitles synced to YouTube playback.
+                <p className="mt-2 text-lg font-semibold text-muted-foreground sm:text-xl">
+                  Practice language with synced subtitles
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
+                <div ref={demoMenuRef} className="relative">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowDemoMenu((value) => !value)}
+                    aria-expanded={showDemoMenu}
+                    aria-label="Open demo videos"
+                  >
+                    <FolderOpen className="mr-2 h-4 w-4" />
+                    Load video
+                  </Button>
+
+                  {showDemoMenu && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-20 bg-stone-950/25 sm:hidden"
+                        onClick={() => setShowDemoMenu(false)}
+                      />
+                      <div className="fixed inset-x-3 bottom-3 z-30 rounded-[24px] border border-border/70 bg-white/95 p-4 shadow-[0_30px_60px_-35px_rgba(17,24,39,0.45)] backdrop-blur-xl sm:absolute sm:left-0 sm:top-12 sm:bottom-auto sm:right-auto sm:w-72">
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-sm font-semibold">Video library</p>
+                            <p className="text-xs text-muted-foreground">
+                              Built-in examples with prepared subtitles.
+                            </p>
+                          </div>
+
+                          {DEMO_VIDEOS.map((demo) => (
+                            <button
+                              key={demo.id}
+                              type="button"
+                              onClick={() => {
+                                setViewerState({
+                                  videoId: demo.id,
+                                  thumbnailUrl: getYouTubeThumbnailUrl(demo.id),
+                                  segments: demo.segments,
+                                  firstTrackLabel: "English",
+                                  secondTrackLabel: "Irish",
+                                  firstTrackCode: "en",
+                                  secondTrackCode: "ga",
+                                });
+                                setQuery("");
+                                setPendingVideoInput(demo.id);
+                                setShowDemoMenu(false);
+                              }}
+                              className={cn(
+                                "w-full rounded-[20px] border px-4 py-3 text-left transition",
+                                viewerState.videoId === demo.id
+                                  ? "border-[hsl(93_95%_34%)] bg-primary/10 hover:bg-primary/15"
+                                  : "border-border/70 bg-white/80 hover:bg-white",
+                              )}
+                            >
+                              <p className="text-sm font-semibold">{demo.title}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{demo.subtitle}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <Button
                   type="button"
                   variant="outline"
@@ -295,9 +455,10 @@ function App() {
                     setSetupError(null);
                     setShowSetupPanel(true);
                   }}
+                  aria-label="Set up a new video"
                 >
-                  <Film className="mr-2 h-4 w-4" />
-                  New video
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add video
                 </Button>
 
                 <div ref={settingsMenuRef} className="relative">
@@ -309,23 +470,26 @@ function App() {
                     aria-expanded={showSettingsMenu}
                     aria-label="Open player settings"
                   >
-                    <Settings2 className="h-4 w-4" />
+                    <Settings2 className="mr-2 h-4 w-4" />
+                    Settings
                   </Button>
 
                   {showSettingsMenu && (
-                    <div className="absolute right-0 top-12 z-20 w-64 rounded-[24px] border border-border/70 bg-white/95 p-4 shadow-[0_30px_60px_-35px_rgba(17,24,39,0.45)] backdrop-blur-xl">
+                    <>
+                      <div
+                        className="fixed inset-0 z-20 bg-stone-950/25 sm:hidden"
+                        onClick={() => setShowSettingsMenu(false)}
+                      />
+                      <div className="fixed inset-x-3 bottom-3 z-30 rounded-[24px] border border-border/70 bg-white/95 p-4 shadow-[0_30px_60px_-35px_rgba(17,24,39,0.45)] backdrop-blur-xl sm:absolute sm:right-0 sm:top-12 sm:bottom-auto sm:left-auto sm:w-64">
                       <div className="space-y-4">
                         <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold">Video subtitles</p>
-                            <p className="text-xs text-muted-foreground">English captions in player</p>
-                          </div>
+                          <p className="text-sm font-semibold">Video subtitles</p>
                           <button
                             type="button"
                             onClick={() => setShowCaptions((value) => !value)}
                             className={cn(
                               "relative h-7 w-12 rounded-full transition",
-                              showCaptions ? "bg-primary" : "bg-muted",
+                              showCaptions ? "bg-emerald-700" : "bg-muted",
                             )}
                           >
                             <span
@@ -335,6 +499,42 @@ function App() {
                               )}
                             />
                           </button>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-semibold">Subtitle language</p>
+                          <div className="mt-2 flex gap-2">
+                            <button
+                              type="button"
+                              disabled={!showCaptions}
+                              onClick={() => setCaptionTrackTarget("primary")}
+                              className={cn(
+                                "rounded-full border px-3 py-1 text-sm font-semibold transition",
+                                showCaptions
+                                  ? captionTrackTarget === "primary"
+                                    ? "border-[hsl(93_95%_34%)] bg-primary/10 text-foreground"
+                                    : "border-border/70 bg-white/70 text-muted-foreground hover:bg-white"
+                                  : "cursor-not-allowed border-border/60 bg-muted/50 text-muted-foreground/70",
+                              )}
+                            >
+                              {viewerState.firstTrackLabel}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!showCaptions}
+                              onClick={() => setCaptionTrackTarget("secondary")}
+                              className={cn(
+                                "rounded-full border px-3 py-1 text-sm font-semibold transition",
+                                showCaptions
+                                  ? captionTrackTarget === "secondary"
+                                    ? "border-[hsl(93_95%_34%)] bg-primary/10 text-foreground"
+                                    : "border-border/70 bg-white/70 text-muted-foreground hover:bg-white"
+                                  : "cursor-not-allowed border-border/60 bg-muted/50 text-muted-foreground/70",
+                              )}
+                            >
+                              {viewerState.secondTrackLabel}
+                            </button>
+                          </div>
                         </div>
 
                         <div>
@@ -358,16 +558,21 @@ function App() {
                           </div>
                         </div>
 
-                        <a
-                          href="https://www.buymeacoffee.com/"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center justify-center rounded-full border border-border/70 bg-white/70 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-white"
-                        >
-                          Buy me a coffee
-                        </a>
+                        <div className="pt-3">
+                          <a
+                            href="https://www.buymeacoffee.com/peterelst"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center justify-center rounded-full border border-emerald-700/80 bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                          >
+                            <span className="mr-2 text-[1.35rem] leading-none">☕</span>
+                            Buy me a coffee
+                          </a>
+                        </div>
+
                       </div>
-                    </div>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
@@ -441,7 +646,7 @@ function App() {
                       )}
                     >
                       <div className="space-y-1">
-                        <span className="inline-flex rounded-full bg-stone-900 px-3 py-1 text-xs font-semibold text-stone-50">
+                        <span className="inline-flex rounded-full bg-emerald-700 px-3 py-1 text-xs font-semibold text-white">
                           {formatTime(segment.start)}
                         </span>
                         <p className="text-xs text-muted-foreground">
@@ -471,8 +676,8 @@ function App() {
         </div>
 
         {showSetupPanel && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-stone-950/30 p-4 backdrop-blur-sm">
-            <div className="w-full max-w-2xl rounded-[28px] border border-white/80 bg-white/95 p-6 shadow-[0_40px_90px_-40px_rgba(15,23,42,0.6)] backdrop-blur-xl">
+          <div className="absolute inset-0 z-30 flex items-center justify-center overflow-y-auto bg-stone-950/30 p-4 backdrop-blur-sm">
+            <div className="my-auto w-full max-w-xl rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_40px_90px_-40px_rgba(15,23,42,0.6)] backdrop-blur-xl sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-2xl font-bold">Set up a new video</h3>
@@ -501,7 +706,7 @@ function App() {
                   </p>
                 </div>
 
-                <div className="overflow-hidden rounded-[24px] border border-border/70 bg-muted/40">
+                <div className="mx-auto w-full max-w-sm overflow-hidden rounded-[20px] border border-border/70 bg-muted/40">
                   <div className="flex aspect-video items-center justify-center bg-stone-100">
                     {pendingVideoId && thumbnailStatus !== "error" ? (
                       <img
@@ -521,43 +726,33 @@ function App() {
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="grid gap-2">
-                    <span className="text-sm font-semibold">First subtitle file</span>
-                    <div className="flex min-h-28 items-center justify-center rounded-[24px] border border-dashed border-border/80 bg-white/70 px-4 text-center">
-                      <div>
-                        <Upload className="mx-auto h-5 w-5 text-muted-foreground" />
-                        <p className="mt-2 text-sm font-medium">
-                          {pendingFirstFile ? pendingFirstFile.name : "Upload .vtt or .srt"}
-                        </p>
-                      </div>
-                    </div>
+                    <span className="text-sm font-semibold">Primary subtitle (.vtt or .srt)</span>
                     <input
                       type="file"
                       accept=".vtt,.srt"
-                      className="text-sm"
+                      className="w-full rounded-[16px] border border-border/70 bg-white/70 px-3 py-2 text-sm file:mr-3 file:rounded-full file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:font-semibold file:text-foreground"
                       onChange={(event) =>
                         setPendingFirstFile(event.target.files?.[0] ?? null)
                       }
                     />
+                    {pendingFirstFile && (
+                      <p className="text-xs text-muted-foreground">{pendingFirstFile.name}</p>
+                    )}
                   </label>
 
                   <label className="grid gap-2">
-                    <span className="text-sm font-semibold">Second subtitle file</span>
-                    <div className="flex min-h-28 items-center justify-center rounded-[24px] border border-dashed border-border/80 bg-white/70 px-4 text-center">
-                      <div>
-                        <Upload className="mx-auto h-5 w-5 text-muted-foreground" />
-                        <p className="mt-2 text-sm font-medium">
-                          {pendingSecondFile ? pendingSecondFile.name : "Upload .vtt or .srt"}
-                        </p>
-                      </div>
-                    </div>
+                    <span className="text-sm font-semibold">Secondary subtitle (.vtt or .srt)</span>
                     <input
                       type="file"
                       accept=".vtt,.srt"
-                      className="text-sm"
+                      className="w-full rounded-[16px] border border-border/70 bg-white/70 px-3 py-2 text-sm file:mr-3 file:rounded-full file:border-0 file:bg-secondary/15 file:px-3 file:py-2 file:font-semibold file:text-foreground"
                       onChange={(event) =>
                         setPendingSecondFile(event.target.files?.[0] ?? null)
                       }
                     />
+                    {pendingSecondFile && (
+                      <p className="text-xs text-muted-foreground">{pendingSecondFile.name}</p>
+                    )}
                   </label>
                 </div>
 
@@ -571,15 +766,16 @@ function App() {
                   <Button type="button" variant="outline" onClick={() => resetSetupPanel()}>
                     Cancel
                   </Button>
-                  <Button type="button" onClick={applyNewVideo} disabled={isApplyingSetup}>
-                    {isApplyingSetup ? "Processing..." : "Load video"}
+                  <Button type="button" onClick={applyNewVideo} disabled={!isSetupReady}>
+                    {isApplyingSetup ? "Preparing..." : "Prepare video"}
                   </Button>
                 </div>
               </div>
             </div>
           </div>
         )}
-      </section>
+        </section>
+      </div>
     </main>
   );
 }
