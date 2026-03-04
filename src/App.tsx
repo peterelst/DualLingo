@@ -467,7 +467,7 @@ function App() {
   return (
     <main className="flex h-screen w-full flex-col overflow-hidden">
       {showNoticeBanner && (
-        <div className="flex items-center justify-between gap-4 bg-indigo-800 px-4 py-3 text-sm text-white sm:px-6">
+        <div className="fixed inset-x-0 top-0 z-40 flex items-center justify-between gap-4 bg-indigo-800 px-4 py-3 text-sm text-white sm:static sm:px-6">
           <p className="text-white">
             This is a prototype tool strictly for educational purposes. Rights for the video and
             subtitles remain with the original rights holders. 🙏🏻
@@ -495,9 +495,6 @@ function App() {
                   <span className="mr-2">🦉</span>
                   DualLingo
                 </h1>
-                <p className="mt-2 text-lg font-semibold text-muted-foreground sm:text-xl">
-                  Practice language with synced subtitles
-                </p>
               </div>
 
               <div className="flex items-center gap-2">
@@ -509,9 +506,10 @@ function App() {
                     onClick={() => setShowDemoMenu((value) => !value)}
                     aria-expanded={showDemoMenu}
                     aria-label="Open demo videos"
+                    className="px-3 sm:px-4"
                   >
-                    <FolderOpen className="mr-2 h-4 w-4" />
-                    Load video
+                    <FolderOpen className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Load video</span>
                   </Button>
 
                   {showDemoMenu && (
@@ -675,9 +673,10 @@ function App() {
                     setShowSetupPanel(true);
                   }}
                   aria-label="Set up a new video"
+                  className="px-3 sm:px-4"
                 >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add video
+                  <Plus className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Add video</span>
                 </Button>
 
                 <div ref={settingsMenuRef} className="relative">
@@ -688,9 +687,10 @@ function App() {
                     onClick={() => setShowSettingsMenu((value) => !value)}
                     aria-expanded={showSettingsMenu}
                     aria-label="Open player settings"
+                    className="px-3 sm:px-4"
                   >
-                    <Settings2 className="mr-2 h-4 w-4" />
-                    Settings
+                    <Settings2 className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Settings</span>
                   </Button>
 
                   {showSettingsMenu && (
@@ -814,13 +814,13 @@ function App() {
             </Card>
           </div>
 
-          <Card className="flex min-h-0 flex-col overflow-hidden xl:h-full">
+            <Card className="flex min-h-0 flex-col overflow-hidden xl:h-full">
             <div className="border-b border-border/60 p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <h2 className="text-2xl font-bold">Transcript</h2>
                 </div>
-                <div className="group relative w-full sm:w-auto">
+                <div className="group relative ml-auto w-40 shrink-0 sm:w-auto">
                   <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     value={query}
