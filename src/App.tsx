@@ -61,7 +61,21 @@ const DEMO_VIDEOS = [
     subtitle: "Season 8, episode 61",
     segments: thirdDemoTranscript as TranscriptSegment[],
   },
-] as const;
+] as const satisfies readonly {
+  id: string;
+  title: string;
+  subtitle: string;
+  segments: TranscriptSegment[];
+}[];
+
+const getEpisodeNumber = (subtitle: string) => {
+  const match = subtitle.match(/episode\s+(\d+)/i);
+  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+};
+
+const SORTED_DEMO_VIDEOS = [...DEMO_VIDEOS].sort(
+  (left, right) => getEpisodeNumber(left.subtitle) - getEpisodeNumber(right.subtitle),
+);
 
 const formatTime = (seconds: number) => {
   const totalSeconds = Math.max(0, Math.floor(seconds));
@@ -524,7 +538,7 @@ function App() {
                             <p className="text-sm font-semibold">Video library</p>
                           </div>
 
-                          {DEMO_VIDEOS.map((demo) => (
+                          {SORTED_DEMO_VIDEOS.map((demo) => (
                             <button
                               key={demo.id}
                               type="button"
