@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 105 35% 97%;
+  --foreground: 216 22% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 216 22% 14%;
+  --primary: 93 95% 41%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 199 93% 54%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 100 28% 93%;
+  --muted-foreground: 218 10% 37%;
+  --accent: 47 100% 50%;
+  --accent-foreground: 32 85% 16%;
+  --border: 101 22% 84%;
+  --input: 101 22% 84%;
+  --ring: 93 95% 41%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  color: hsl(var(--foreground));
+  background:
+    radial-gradient(circle at top left, rgba(88, 204, 2, 0.26), transparent 32%),
+    radial-gradient(circle at top right, rgba(28, 176, 246, 0.24), transparent 28%),
+    radial-gradient(circle at bottom center, rgba(255, 200, 0, 0.18), transparent 34%),
+    linear-gradient(180deg, #f7ffe9 0%, #f9fffd 54%, #eef8ff 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.32) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: radial-gradient(circle at center, black, transparent 88%);
+  pointer-events: none;
+  opacity: 0.2;
+}
+
+#root {
+  position: relative;
+  isolation: isolate;
+}
+
+.transcript-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(88, 204, 2, 0.45) transparent;
+}
+
+.transcript-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.transcript-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(88, 204, 2, 0.45);
+  border-radius: 999px;
+}
