@@ -1,0 +1,8 @@
+services:
+  subtitle-api:
+    build:
+      context: .
+      dockerfile: services/subtitle-api/Dockerfile
+    ports:
+      - "8789:8789"
+    restart: unless-stopped
