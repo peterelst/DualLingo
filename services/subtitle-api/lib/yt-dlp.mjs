@@ -9,14 +9,24 @@ import { normalizeTrack, parseSubtitleContent } from "./subtitles.mjs";
 const execFileAsync = promisify(execFile);
 const cookiesPath = process.env.YTDLP_COOKIES_PATH;
 
-const getBaseArgs = () => {
-  const args = ["--js-runtimes", "node"];
+const withYtDlpArgs = async (extraArgs, callback) => {
+  const args = ["--js-runtimes", "node", "--remote-components", "ejs:github"];
+  let tempDirectory = null;
 
-  if (cookiesPath) {
-    args.push("--cookies", cookiesPath);
+  try {
+    if (cookiesPath) {
+      tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "linguasync-cookies-"));
+      const writableCookiesPath = path.join(tempDirectory, "youtube-cookies.txt");
+      await fs.copyFile(cookiesPath, writableCookiesPath);
+      args.push("--cookies", writableCookiesPath);
+    }
+
+    return await callback([...args, ...extraArgs]);
+  } finally {
+    if (tempDirectory) {
+      await fs.rm(tempDirectory, { recursive: true, force: true });
+    }
   }
-
-  return args;
 };
 
 const parseTrackLine = (line, origin) => {
@@ -71,12 +81,10 @@ const parseListSubsOutput = (stdout) => {
 };
 
 export const discoverYouTubeSubtitles = async (url) => {
-  const { stdout } = await execFileAsync(
-    "yt-dlp",
-    [...getBaseArgs(), "--skip-download", "--list-subs", url],
-    {
+  const { stdout } = await withYtDlpArgs(["--skip-download", "--list-subs", url], (args) =>
+    execFileAsync("yt-dlp", args, {
       maxBuffer: 10 * 1024 * 1024,
-    },
+    }),
   );
 
   const titleMatch = stdout.match(/\[info\] Available subtitles for .*?:\s*(.+)/);
@@ -89,7 +97,7 @@ export const discoverYouTubeSubtitles = async (url) => {
 };
 
 const buildSubtitleArgs = (languageCode, origin, outputTemplate, url) => {
-  const args = [...getBaseArgs(), "--skip-download", "--sub-format", "vtt", "-o", outputTemplate];
+  const args = ["--skip-download", "--sub-format", "vtt", "-o", outputTemplate];
 
   if (origin === "auto") {
     args.push("--write-auto-sub");
@@ -118,9 +126,11 @@ export const downloadTrack = async (url, trackId) => {
   const outputTemplate = path.join(directory, "subtitle.%(ext)s");
 
   try {
-    await execFileAsync("yt-dlp", buildSubtitleArgs(languageCode, origin, outputTemplate, url), {
-      maxBuffer: 10 * 1024 * 1024,
-    });
+    await withYtDlpArgs(buildSubtitleArgs(languageCode, origin, outputTemplate, url), (args) =>
+      execFileAsync("yt-dlp", args, {
+        maxBuffer: 10 * 1024 * 1024,
+      }),
+    );
 
     const filePath = await findDownloadedSubtitle(directory);
     const content = await fs.readFile(filePath, "utf8");
