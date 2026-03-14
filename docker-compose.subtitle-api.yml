@@ -3,6 +3,10 @@ services:
     build:
       context: .
       dockerfile: services/subtitle-api/Dockerfile
+    environment:
+      YTDLP_COOKIES_PATH: /app/secrets/youtube-cookies.txt
     ports:
       - "8789:8789"
     restart: unless-stopped
+    volumes:
+      - ./secrets:/app/secrets:ro

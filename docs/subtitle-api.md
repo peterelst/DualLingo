@@ -18,6 +18,22 @@ This is a private-development subtitle service intended for a Hostinger VPS or a
 docker compose -f docker-compose.subtitle-api.yml up --build
 ```
 
+For YouTube, you will likely need cookies from a real browser session because server IPs often hit the "Sign in to confirm you're not a bot" wall.
+
+Create this file before starting the container:
+
+```bash
+mkdir -p secrets
+```
+
+Then save your exported YouTube cookies as:
+
+```bash
+secrets/youtube-cookies.txt
+```
+
+The compose file mounts that path into the container automatically.
+
 Health check:
 
 ```bash
@@ -95,13 +111,25 @@ When a job is `completed`, `result.segments` contains the merged output.
 
 1. Create the VPS with the Docker template.
 2. Copy this repo to the VPS.
-3. Run:
+3. Create a cookies directory:
+
+```bash
+mkdir -p /root/DualLingo/secrets
+```
+
+4. Export your YouTube cookies from your browser in Netscape format and upload them to:
+
+```bash
+/root/DualLingo/secrets/youtube-cookies.txt
+```
+
+5. Run:
 
 ```bash
 docker compose -f docker-compose.subtitle-api.yml up --build -d
 ```
 
-4. Test:
+6. Test:
 
 ```bash
 curl -i http://YOUR_VPS_IP:8789/health

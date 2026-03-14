@@ -7,6 +7,17 @@ import { promisify } from "node:util";
 import { normalizeTrack, parseSubtitleContent } from "./subtitles.mjs";
 
 const execFileAsync = promisify(execFile);
+const cookiesPath = process.env.YTDLP_COOKIES_PATH;
+
+const getBaseArgs = () => {
+  const args = ["--js-runtimes", "node"];
+
+  if (cookiesPath) {
+    args.push("--cookies", cookiesPath);
+  }
+
+  return args;
+};
 
 const parseTrackLine = (line, origin) => {
   const match = line.match(/^\s*([A-Za-z0-9_-]+)(?:\s+([^\[]+?))?\s+vtt\b/i);
@@ -60,9 +71,13 @@ const parseListSubsOutput = (stdout) => {
 };
 
 export const discoverYouTubeSubtitles = async (url) => {
-  const { stdout } = await execFileAsync("yt-dlp", ["--skip-download", "--list-subs", url], {
-    maxBuffer: 10 * 1024 * 1024,
-  });
+  const { stdout } = await execFileAsync(
+    "yt-dlp",
+    [...getBaseArgs(), "--skip-download", "--list-subs", url],
+    {
+      maxBuffer: 10 * 1024 * 1024,
+    },
+  );
 
   const titleMatch = stdout.match(/\[info\] Available subtitles for .*?:\s*(.+)/);
   const autoTitleMatch = stdout.match(/\[info\] Available automatic captions for .*?:\s*(.+)/);
@@ -74,7 +89,7 @@ export const discoverYouTubeSubtitles = async (url) => {
 };
 
 const buildSubtitleArgs = (languageCode, origin, outputTemplate, url) => {
-  const args = ["--skip-download", "--sub-format", "vtt", "-o", outputTemplate];
+  const args = [...getBaseArgs(), "--skip-download", "--sub-format", "vtt", "-o", outputTemplate];
 
   if (origin === "auto") {
     args.push("--write-auto-sub");
